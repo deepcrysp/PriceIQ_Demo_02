@@ -479,18 +479,19 @@ elif page == "Agreement Explorer":
 # AI ANOMALY DETECTION
 # ---------------------------------------------------------
 
+
 elif page == "AI Anomaly Detection":
 
     st.title("AI Pricing Anomaly Detection")
 
     st.caption(
-        "Machine learning and analytical checks identify unusual "
-        "agreement patterns for commercial review."
+        "Investigate unusual SAP agreement patterns with "
+        "evidence, peer comparisons and review guidance."
     )
 
     st.info(
-        "This module uses local machine learning and statistical "
-        "analysis. No external AI API is required."
+        "PriceIQ uses local machine learning and analytical checks. "
+        "An anomaly is a review signal, not proof of incorrect pricing."
     )
 
     flagged_df = filtered_anomalies[
@@ -516,8 +517,17 @@ elif page == "AI Anomaly Detection":
     st.divider()
 
     if flagged_df.empty:
-        st.success("No anomalies were identified in this selection.")
+
+        st.success(
+            "No anomalies were identified in the selected data."
+        )
+
     else:
+
+        # -------------------------------------------------
+        # FILTER ANOMALIES
+        # -------------------------------------------------
+
         severity_filter = st.multiselect(
             "Filter by severity",
             ["High", "Medium"],
@@ -545,41 +555,420 @@ elif page == "AI Anomaly Detection":
                     t in str(x) for t in type_filter
                 ) if type_filter else False
             )
-        ]
+        ].copy()
 
-        show_table(
-            display,
-            [
-                "severity", "anomaly_type", "anomaly_reason",
-                "customer", "customer_name", "material",
-                "agreement_value", "unit",
-                "relative_to_median_pct",
-                "valid_from", "valid_to"
-            ]
+        st.write(
+            f"**{len(display):,} records require review**"
+        )
+
+        # Preserve original row index for comparison
+        display.insert(
+            0, "source_row", display.index.astype(str)
+        )
+
+        st.dataframe(
+            display[
+                [
+                    "severity", "anomaly_type",
+                    "customer", "customer_name",
+                    "material", "agreement_value",
+                    "unit", "relative_to_median_pct",
+                    "valid_from", "valid_to"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
         )
 
         st.download_button(
             "Download anomaly review file",
-            display.to_csv(index=False).encode("utf-8"),
+            display.drop(
+                columns=["source_row"]
+            ).to_csv(index=False).encode("utf-8"),
             file_name="priceiq_anomaly_review.csv",
             mime="text/csv"
         )
 
-    st.subheader("How the detection works")
+        st.divider()
 
-    st.markdown("""
-    - **Isolation Forest:** Identifies agreement values that are unusual
-      relative to the overall dataset.
-    - **Material price dispersion:** Compares agreement values for the
-      same material and unit where enough comparison records exist.
-    - **Duplicate patterns:** Finds repeated customer, material, unit
-      and agreement-value combinations.
-    - **Overlapping validity:** Identifies potentially overlapping
-      validity periods for the same customer and material.
+        # -------------------------------------------------
+        # SELECT AN AGREEMENT FOR INVESTIGATION
+        # -------------------------------------------------
 
-    A flagged record should be reviewed against the source SAP
-    condition record and commercial context before taking action.
-    """)
+        st.subheader("Investigate a Flagged Agreement")
+
+        def agreement_label(row):
+            return (
+                f"{row['severity']} | "
+                f"Customer: {row['customer']} | "
+                f"Material: {row['material']} | "
+                f"Value: {row['agreement_value']:,.2f}"
+                if pd.notna(row["agreement_value"])
+                else (
+                    f"{row['severity']} | "
+                    f"Customer: {row['customer']} | "
+                    f"Material: {row['material']}"
+                )
+            )
+
+        if display.empty:
+            st.warning(
+                "No records match the selected filters. "
+                "Change the severity or anomaly category filters."
+            )
+            st.stop()
+
+        selected_row_id = st.selectbox(
+            "Select an agreement to investigate",
+            display["source_row"].tolist(),
+            format_func=lambda row_id: agreement_label(
+                display[
+                    display["source_row"] == row_id
+                ].iloc[0]
+            )
+        )
+
+        selected = display[
+            display["source_row"] == selected_row_id
+        ].iloc[0]
+
+        selected_index = selected.name
+
+        # -------------------------------------------------
+        # SELECTED AGREEMENT SUMMARY
+        # -------------------------------------------------
+
+        st.divider()
+        st.subheader("Agreement Investigation")
+
+        if selected["severity"] == "High":
+            st.error("High-priority review signal")
+        else:
+            st.warning("Medium-priority review signal")
+
+        x1, x2, x3, x4 = st.columns(4)
+
+        x1.metric(
+            "Customer",
+            str(selected["customer"])
+        )
+
+        x2.metric(
+            "Material",
+            str(selected["material"])
+        )
+
+        x3.metric(
+            "Agreement Value",
+            (
+                f"{selected['agreement_value']:,.2f}"
+                if pd.notna(selected["agreement_value"])
+                else "N/A"
+            )
+        )
+
+        x4.metric(
+            "Unit",
+            str(selected["unit"])
+        )
+
+        st.markdown("**Detected anomaly categories**")
+
+        anomaly_categories = [
+            x.strip()
+            for x in str(selected["anomaly_type"]).split(";")
+            if x.strip()
+        ]
+
+        for category in anomaly_categories:
+            st.markdown(f"- {category}")
+
+        st.markdown("**Why PriceIQ flagged this agreement**")
+
+        st.write(selected["anomaly_reason"])
+
+        # -------------------------------------------------
+        # PRICE COMPARISON
+        # -------------------------------------------------
+
+        st.divider()
+        st.subheader("1. Price Comparison Evidence")
+
+        st.caption(
+            "Compare this agreement with other agreements "
+            "for the same material and unit."
+        )
+
+        peer = filtered_df[
+            (
+                filtered_df["material"].astype(str)
+                == str(selected["material"])
+            )
+            &
+            (
+                filtered_df["unit"].astype(str)
+                == str(selected["unit"])
+            )
+        ].copy()
+
+        # Exclude selected agreement from its peer group
+        peer = peer.loc[
+            peer.index.astype(str) != str(selected_row_id)
+        ]
+
+        peer["agreement_value"] = pd.to_numeric(
+            peer["agreement_value"], errors="coerce"
+        )
+
+        peer = peer.dropna(
+            subset=["agreement_value"]
+        )
+
+        selected_value = pd.to_numeric(
+            pd.Series([selected["agreement_value"]]),
+            errors="coerce"
+        ).iloc[0]
+
+        if len(peer) >= 2 and pd.notna(selected_value):
+
+            peer_median = peer["agreement_value"].median()
+            peer_min = peer["agreement_value"].min()
+            peer_max = peer["agreement_value"].max()
+
+            difference = selected_value - peer_median
+
+            difference_pct = (
+                difference / peer_median * 100
+                if peer_median != 0 else np.nan
+            )
+
+            p1, p2, p3, p4 = st.columns(4)
+
+            p1.metric(
+                "Comparable Agreements",
+                f"{len(peer):,}"
+            )
+
+            p2.metric(
+                "Peer Median",
+                f"{peer_median:,.2f}"
+            )
+
+            p3.metric(
+                "Difference from Median",
+                f"{difference:+,.2f}"
+            )
+
+            p4.metric(
+                "Percentage Difference",
+                (
+                    f"{difference_pct:+.1f}%"
+                    if pd.notna(difference_pct)
+                    else "N/A"
+                )
+            )
+
+            st.markdown(
+                f"**Comparable agreement range:** "
+                f"{peer_min:,.2f} to {peer_max:,.2f}"
+            )
+
+            comparison = peer.copy()
+
+            comparison["difference_from_selected_pct"] = (
+                (
+                    comparison["agreement_value"]
+                    / selected_value
+                ) - 1
+            ) * 100 if selected_value != 0 else np.nan
+
+            comparison["difference_from_peer_median_pct"] = (
+                (
+                    comparison["agreement_value"]
+                    / peer_median
+                ) - 1
+            ) * 100 if peer_median != 0 else np.nan
+
+            comparison = comparison.sort_values(
+                "agreement_value",
+                ascending=False
+            )
+
+            st.markdown("**Comparable agreements**")
+
+            comparison_columns = [
+                "customer",
+                "customer_name",
+                "material",
+                "agreement_value",
+                "unit",
+                "difference_from_peer_median_pct",
+                "valid_from",
+                "valid_to"
+            ]
+
+            st.dataframe(
+                comparison[
+                    [
+                        col for col in comparison_columns
+                        if col in comparison.columns
+                    ]
+                ].head(20),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.caption(
+                "These comparisons use maintained SAP agreement values. "
+                "They are not verified realized selling prices. "
+                "Currency and commercial terms must be checked."
+            )
+
+        else:
+
+            st.warning(
+                "There are not enough comparable agreements for a "
+                "meaningful material and unit price comparison."
+            )
+
+        # -------------------------------------------------
+        # CUSTOMER AGREEMENT HISTORY
+        # -------------------------------------------------
+
+        st.divider()
+        st.subheader("2. Customer Agreement History")
+
+        st.caption(
+            "Review other agreements for the same customer and material."
+        )
+
+        customer_history = filtered_df[
+            (
+                filtered_df["customer"].astype(str)
+                == str(selected["customer"])
+            )
+            &
+            (
+                filtered_df["material"].astype(str)
+                == str(selected["material"])
+            )
+        ].copy()
+
+        customer_history["agreement_value"] = pd.to_numeric(
+            customer_history["agreement_value"],
+            errors="coerce"
+        )
+
+        customer_history = customer_history.sort_values(
+            "valid_from"
+        )
+
+        st.write(
+            f"**{len(customer_history):,} matching agreement records**"
+        )
+
+        history_columns = [
+            "agreement_number",
+            "agreement_type",
+            "customer",
+            "material",
+            "agreement_value",
+            "unit",
+            "valid_from",
+            "valid_to"
+        ]
+
+        st.dataframe(
+            customer_history[
+                [
+                    col for col in history_columns
+                    if col in customer_history.columns
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # -------------------------------------------------
+        # REVIEW GUIDANCE
+        # -------------------------------------------------
+
+        st.divider()
+        st.subheader("3. Recommended Commercial Review")
+
+        guidance = {
+            "Material price dispersion": [
+                "Confirm that the compared agreements use the same currency.",
+                "Verify unit of measure and price conversion factors.",
+                "Review customer segment, sales area and commercial terms.",
+                "Check whether discounts, rebates or special conditions explain the difference."
+            ],
+            "Unusual agreement value": [
+                "Verify the original SAP condition record.",
+                "Check value scale, currency and unit of measure.",
+                "Confirm whether the agreement is a special commercial arrangement.",
+                "Compare with other valid agreements for the same material."
+            ],
+            "Duplicate pattern": [
+                "Check whether the records represent separate condition records or versions.",
+                "Review condition identifiers and agreement validity.",
+                "Confirm whether duplicate-looking records are intentional."
+            ],
+            "Overlapping validity": [
+                "Review the agreement start and end dates.",
+                "Check SAP condition precedence and access sequence.",
+                "Verify sales area, condition type and other relevant keys.",
+                "Confirm whether both agreements are intended to remain active."
+            ]
+        }
+
+        for category in anomaly_categories:
+
+            if category in guidance:
+                st.markdown(f"**{category}**")
+
+                for item in guidance[category]:
+                    st.markdown(f"- {item}")
+
+        st.warning(
+            "PriceIQ identifies potential review opportunities. "
+            "The pricing team must validate the source SAP records "
+            "and commercial context before changing an agreement."
+        )
+
+    # -------------------------------------------------
+    # DETECTION METHODOLOGY
+    # -------------------------------------------------
+
+    with st.expander("How PriceIQ detects anomalies"):
+
+        st.markdown("""
+        **Isolation Forest**
+
+        Identifies agreement values that are unusual relative to
+        the overall dataset. The model score is a relative anomaly
+        signal, not a probability of error.
+
+        **Material price dispersion**
+
+        Compares agreement values for the same material and unit.
+        Groups with fewer than five records are not used for this
+        particular dispersion flag.
+
+        **Duplicate patterns**
+
+        Identifies repeated combinations of customer, material,
+        unit and agreement value.
+
+        **Overlapping validity**
+
+        Identifies potentially overlapping validity periods for
+        the same customer and material, and unit where available.
+
+        All signals are intended to prioritize investigation.
+        They do not independently establish a pricing violation.
+        """)
+
 
 
 # ---------------------------------------------------------
