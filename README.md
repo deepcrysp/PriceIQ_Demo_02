@@ -1,33 +1,60 @@
-# PriceIQ Customer Agreement POC
 
-This edition adapts PriceIQ to three customer-provided SAP pricing-agreement extracts:
-- Region 1 / District 33 / A933
-- Region 1 / District 33 / A963
-- Region 4 / District 42 / A933
+# PriceIQ 2.0
 
-## What this version does
-- Loads normalized customer agreement records
-- Filters by region, district, extract and unit
-- Searches by material, customer ID and customer name
-- Shows agreement expiry and renewal worklists
-- Compares maintained agreement values for the same material and unit
-- Shows customer agreement profiles
-- Provides a clearly labelled illustrative margin floor sandbox using user-entered cost and margin assumptions
+AI-powered pricing intelligence proof of concept using SAP pricing agreement data.
 
-## Important limitations
-The supplied workbooks are agreement extracts. They do not contain invoice quantities, realized transaction prices, costs, rebates, freight or cost-to-serve. Therefore this version does **not** claim to calculate demand elasticity, actual gross/pocket margin, volume impact, revenue forecasts or optimized prices.
+## Features
 
-The app uses the normalized CSV generated from the three files. Do not put customer data in a public GitHub repository or an unapproved public hosting environment. Use a private repository and hosting approved by the customer / your organization. Confirm the customer's authorization before sharing or deploying the data.
+- Executive pricing agreement overview
+- SAP agreement explorer
+- Machine-learning pricing anomaly detection
+- Material and unit price benchmarking
+- Agreement expiry and renewal monitoring
+- Customer agreement profiles
+- Hypothetical margin guardrail sandbox
+- Data readiness assessment
 
-## Run locally (Windows PowerShell)
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m streamlit run app.py
-```
+## AI and analytics
 
-## Files
-- `app.py`: Streamlit application
-- `data/customer_agreements.csv`: normalized agreement records
-- `PriceIQ_Customer_Data_Assessment.xlsx`: profiling workbook (provided separately)
-- `requirements.txt`: dependencies
+PriceIQ uses local Python machine learning, including Isolation Forest, along with statistical and rule-based checks.
+
+No external AI API key is required.
+
+Anomaly flags are review indicators, not confirmed pricing violations.
+
+## Data
+
+Place the normalized customer agreement CSV here:
+
+data/customer_agreements.csv
+
+The application also searches nested folders for this file.
+
+## Run locally
+
+Install dependencies:
+
+pip install -r requirements.txt
+
+Start the application:
+
+streamlit run app.py
+
+## Deploy on Streamlit Community Cloud
+
+1. Push the project to GitHub.
+2. Open Streamlit Community Cloud.
+3. Select the GitHub repository.
+4. Set the main file path to app.py.
+5. Deploy.
+
+## Data limitations
+
+The current SAP agreement extracts do not contain invoice quantities,
+realized selling prices, product costs, rebates, freight or competitor
+pricing.
+
+Therefore, this version does not claim to calculate validated price
+elasticity, actual customer profitability or optimized selling prices.
+
+These capabilities require additional source data.
