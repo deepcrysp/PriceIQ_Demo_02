@@ -784,6 +784,7 @@ pages = [
     "Customer Profile",
     "Margin Guardrail Sandbox",
     "Data Readiness",
+    "Uploaded Data Preview",
 ]
 
 page = st.sidebar.radio(
@@ -2774,3 +2775,53 @@ st.sidebar.caption(
 st.sidebar.caption(
     "Pricing Intelligence & Margin Governance"
 )
+
+
+# ============================================================
+# UPLOADED DATA PREVIEW
+# ============================================================
+
+elif page == "Uploaded Data Preview":
+
+    show_page_header(
+        "Uploaded Data Preview",
+        "Inspect the normalized agreement records currently loaded in this session.",
+    )
+
+    st.caption(
+        "Uploaded files are held in Streamlit session memory only. "
+        "They are not written to GitHub or persisted by this application."
+    )
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Loaded rows", f"{len(raw_df):,}")
+    c2.metric("Customers", f"{raw_df['customer'].nunique():,}")
+    c3.metric("Materials", f"{raw_df['material'].nunique():,}")
+
+    if "source_file" in raw_df.columns:
+        st.subheader("Source files")
+        source_summary = (
+            raw_df.groupby("source_file", dropna=False)
+            .size()
+            .reset_index(name="Rows")
+            .sort_values("Rows", ascending=False)
+        )
+        st.dataframe(source_summary, hide_index=True, use_container_width=True)
+
+    st.subheader("Normalized data")
+    st.dataframe(raw_df.head(500), hide_index=True, use_container_width=True)
+
+    st.subheader("Column coverage")
+    coverage = pd.DataFrame({
+        "Column": raw_df.columns,
+        "Non-null rows": [int(raw_df[col].notna().sum()) for col in raw_df.columns],
+        "Missing rows": [int(raw_df[col].isna().sum()) for col in raw_df.columns],
+        "Data type": [str(raw_df[col].dtype) for col in raw_df.columns],
+    })
+    st.dataframe(coverage, hide_index=True, use_container_width=True)
+
+    display_download_button(
+        raw_df,
+        "priceiq_normalized_agreements.csv",
+        "Download normalized data",
+    )
